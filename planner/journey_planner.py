@@ -1,6 +1,6 @@
 
 from datetime import datetime
-from railway_api import trains_between
+from api.railway_api import trains_between
 
 
 def duration_minutes(value):

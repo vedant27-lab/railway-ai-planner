@@ -15,6 +15,7 @@ def ask_agent(role, task):
             {"role":"system", "content":role},
             {"role":"user", "content":task},
         ],
+        max_tokens=800,
     )
 
     return response.choices[0].message.content or " "
@@ -23,18 +24,24 @@ def journey_planner_agent(
         source,
         destination,
         date,
-        train,
+        trains,
         preference="fastest",
+        feedback=None,
 ):
+
+    """Recommend the user, trains, using reviewer feedback when revising."""
     role ="""
     You are a railway journey agent.
 
     Recommend suitable trains using only the supplied data.
-    If the supplied data is insufficient then just ask user to provide complete data first.
     Consider the user's preference.
-    Never invent train numbers, timings, fares or availiabilty.
+    Never invent train numbers, timings, fares or availiabilty or connections.
+
     If the data is incomplete, clearly say so. 
     Explain why your recommendation is suitable.
+
+    Follow the user's preference and correct any issues
+    identified by reviewer.
     """
 
     task = f"""
@@ -45,8 +52,19 @@ def journey_planner_agent(
     Date: {date}
     Preference: {preference}
 
-    Train data:
-    {json.dumps(train, ensure_ascii=False, default=str)}
+    Train Records:
+    {json.dumps(trains, ensure_ascii=False, default=str)}
+
+    Reviewer feedback from a previous attempt:
+    {feedback or "No previous review. Create the initial plan."}
+
+    Recommend up to three suitable trains.
+    Include train number, name, departure, arrival, duration,
+    and reasons for your recommendations.
+
+    Correct the reviewer's identified errors using the source
+    records. Do not claim a correction is verified unless
+    the supplied data supports it.
     """
 
     return ask_agent(role, task)
