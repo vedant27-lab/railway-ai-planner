@@ -3,6 +3,8 @@ import os
 import requests
 from dotenv import load_dotenv
 
+from station_lookup import resolve_station, resolve_stops
+
 load_dotenv()
 
 API_KEY = os.getenv("RAIL_RADAR_API")
@@ -17,6 +19,8 @@ def trains_between(from_code, to_code, journey_date=None):
             "RAILRADAR_API_KEY is missing from your .env file"
         )
 
+    from_code = resolve_station(from_code)
+    to_code = resolve_station(to_code)
     url = f"{BASE_URL}/trains/between/{from_code}/{to_code}"
 
     headers = {
@@ -63,7 +67,7 @@ def plan_route(stops, max_transfers=1):
         raise ValueError("At least two stations are required.")
 
     payload = {
-        "stops": stops,
+        "stops": resolve_stops(stops),
         "maxTransfers": max_transfers,
     }
 

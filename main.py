@@ -96,20 +96,20 @@ def main():
     for index, itinerary in enumerate(itineraries, start=1):
         report = validate_itinerary(itinerary)
 
-        print(f"\n--- Itinerary {index} ---")
-        print("Valid:", report["valid"])
-
-        for error in report["errors"]:
-            print("ERROR:", error)
-
-        for warning in report["warnings"]:
-            print("WARNING:", warning)
+        #print(f"\n--- Itinerary {index} ---")
+        #print("Valid:", report["valid"])
+#
+        #for error in report["errors"]:
+        #    print("ERROR:", error)
+#
+        #for warning in report["warnings"]:
+        #    print("WARNING:", warning)
 
         if report["valid"]:
             valid_itineraries.append(itinerary)
 
-    print(f"\nChecked: {len(itineraries)}")
-    print(f"Passed structural checks: {len(valid_itineraries)}")
+    #print(f"\nChecked: {len(itineraries)}")
+    #print(f"Passed structural checks: {len(valid_itineraries)}")
 
     return valid_itineraries
 

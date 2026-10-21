@@ -2,19 +2,35 @@
 from datetime import datetime
 
 
-def _minutes(date, time):
-    """Convert a date and HH:MM time into comparable minutes."""
-    dt = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M")
-    return int(dt.timestamp() // 60)
+def _parse_datetime(date, time):
+    """Parse a local railway date and HH:MM time."""
+    return datetime.strptime(
+        f"{date} {time}", "%Y-%m-%d %H:%M"
+    )
 
 
 def validate_itinerary(itinerary):
     """
-    Return a validation report for one RailRadar itinerary.
-    Does not modify the original API response.
+    Validate the structure and timing of a RailRadar itinerary.
+
+    Returns:
+        {
+            "valid": bool,
+            "errors": list[str],
+            "warnings": list[str]
+        }
+
+    This checks supplied data; it cannot guarantee real-world train status.
     """
     errors = []
     warnings = []
+
+    if not isinstance(itinerary, dict):
+        return {
+            "valid": False,
+            "errors": ["Itinerary must be a dictionary"],
+            "warnings": [],
+        }
 
     legs = itinerary.get("legs")
     transfers = itinerary.get("transfers", [])
@@ -33,15 +49,32 @@ def validate_itinerary(itinerary):
             "warnings": [],
         }
 
-    if len(transfers) != len(legs) - 1:
+    expected_transfers = len(legs) - 1
+
+    if len(transfers) != expected_transfers:
         warnings.append(
-            f"Expected {len(legs) - 1} transfers for "
+            f"Expected {expected_transfers} transfers for "
             f"{len(legs)} legs; received {len(transfers)}"
         )
+
+    parsed_legs = []
+
     for index, leg in enumerate(legs, start=1):
-        train = leg.get("train") or {}
-        origin = leg.get("from") or {}
-        destination = leg.get("to") or {}
+        if not isinstance(leg, dict):
+            errors.append(f"Leg {index}: must be an object")
+            parsed_legs.append(None)
+            continue
+
+        train = leg.get("train")
+        origin = leg.get("from")
+        destination = leg.get("to")
+
+        if not isinstance(train, dict):
+            train = {}
+        if not isinstance(origin, dict):
+            origin = {}
+        if not isinstance(destination, dict):
+            destination = {}
 
         if not train.get("number"):
             errors.append(f"Leg {index}: missing train number")
@@ -49,120 +82,184 @@ def validate_itinerary(itinerary):
         if not origin.get("code") or not destination.get("code"):
             errors.append(f"Leg {index}: missing station code")
 
-        if not origin.get("date") or not origin.get("departure"):
-            errors.append(f"Leg {index}: missing departure date/time")
-
-        if not destination.get("date") or not destination.get("arrival"):
-            errors.append(f"Leg {index}: missing arrival date/time")
+        start = None
+        end = None
 
         try:
-            if (
-                origin.get("date")
-                and origin.get("departure")
-                and destination.get("date")
-                and destination.get("arrival")
-            ):
-                start = _minutes(
+            if origin.get("date") and origin.get("departure"):
+                start = _parse_datetime(
                     origin["date"], origin["departure"]
                 )
-                end = _minutes(
-                    destination["date"], destination["arrival"]
+            else:
+                errors.append(
+                    f"Leg {index}: missing departure date/time"
                 )
-
-                if end <= start:
-                    errors.append(
-                        f"Leg {index}: arrival is not after departure"
-                    )
         except (ValueError, TypeError):
-            errors.append(f"Leg {index}: invalid date/time format")
-    for index in range(len(legs) - 1):
-        current = legs[index]
-        following = legs[index + 1]
-
-        arrival = current.get("to") or {}
-        departure = following.get("from") or {}
-
-        if not (
-            arrival.get("date")
-            and arrival.get("arrival")
-            and departure.get("date")
-            and departure.get("departure")
-        ):
-            continue
+            errors.append(
+                f"Leg {index}: invalid departure date/time"
+            )
 
         try:
-            arrived_at = _minutes(
-                arrival["date"], arrival["arrival"]
-            )
-            leaves_at = _minutes(
-                departure["date"], departure["departure"]
-            )
-        except (ValueError, TypeError):
-            continue
-
-        if leaves_at <= arrived_at:
-            errors.append(
-                f"Transfer {index + 1}: next train departs "
-                "before the previous train arrives"
-            )
-            continue
-        if arrival.get("code") != departure.get("code"):
-            transfer = (
-                transfers[index]
-                if index < len(transfers)
-                else {}
-            )
-            change = transfer.get("changeStations") or {}
-            change_from = change.get("from") or {}
-            change_to = change.get("to") or {}
-
-            if (
-                change_from.get("code") != arrival.get("code")
-                or change_to.get("code") != departure.get("code")
-            ):
-                warnings.append(
-                    f"Transfer {index + 1}: station change is "
-                    "missing or does not match the leg stations"
+            if destination.get("date") and destination.get("arrival"):
+                end = _parse_datetime(
+                    destination["date"], destination["arrival"]
                 )
             else:
+                errors.append(
+                    f"Leg {index}: missing arrival date/time"
+                )
+        except (ValueError, TypeError):
+            errors.append(
+                f"Leg {index}: invalid arrival date/time"
+            )
+
+        if start is not None and end is not None and end <= start:
+            errors.append(
+                f"Leg {index}: arrival is not after departure"
+            )
+
+        parsed_legs.append({
+            "origin": origin,
+            "destination": destination,
+            "start": start,
+            "end": end,
+        })
+
+    for index in range(expected_transfers):
+        current = parsed_legs[index]
+        following = parsed_legs[index + 1]
+        transfer_number = index + 1
+
+        if current is None or following is None:
+            continue
+
+        arrival = current["destination"]
+        departure = following["origin"]
+        arrived_at = current["end"]
+        leaves_at = following["start"]
+
+        arrival_code = arrival.get("code")
+        departure_code = departure.get("code")
+
+        transfer = transfers[index] if index < len(transfers) else {}
+
+        if not isinstance(transfer, dict):
+            warnings.append(
+                f"Transfer {transfer_number}: transfer data "
+                "must be an object"
+            )
+            transfer = {}
+
+        change = transfer.get("changeStations")
+        if not isinstance(change, dict):
+            change = {}
+
+        change_from = change.get("from")
+        change_to = change.get("to")
+
+        if not isinstance(change_from, dict):
+            change_from = {}
+        if not isinstance(change_to, dict):
+            change_to = {}
+
+        station_change = (
+            arrival_code
+            and departure_code
+            and arrival_code != departure_code
+        )
+
+        if station_change:
+            if (
+                change_from.get("code") != arrival_code
+                or change_to.get("code") != departure_code
+            ):
+                errors.append(
+                    f"Transfer {transfer_number}: consecutive legs "
+                    "use different stations, but station-change "
+                    "details are missing or inconsistent"
+                )
+            else:
+                warnings.append(
+                    f"Transfer {transfer_number}: change stations "
+                    f"from {arrival_code} to {departure_code}"
+                )
+        elif (
+            arrival_code
+            and departure_code
+            and arrival_code == departure_code
+            and change_from.get("code")
+            and change_to.get("code")
+            and change_from.get("code") != change_to.get("code")
+        ):
+            warnings.append(
+                f"Transfer {transfer_number}: station-change "
+                "metadata conflicts with the leg station codes"
+            )
+
+        if arrived_at is not None and leaves_at is not None:
+            available_minutes = (
+                leaves_at - arrived_at
+            ).total_seconds() / 60
+
+            if available_minutes <= 0:
+                errors.append(
+                    f"Transfer {transfer_number}: next train departs "
+                    "before or at the previous train's arrival"
+                )
+            elif station_change:
                 transit = change.get("transitMinutes")
 
-                if isinstance(transit, (int, float)):
-                    available = leaves_at - arrived_at
-
-                    if transit > available:
+                if (
+                    isinstance(transit, (int, float))
+                    and not isinstance(transit, bool)
+                    and transit >= 0
+                ):
+                    if transit > available_minutes:
                         errors.append(
-                            f"Transfer {index + 1}: station transfer "
-                            "takes longer than the available connection"
+                            f"Transfer {transfer_number}: station "
+                            "transfer takes longer than the available "
+                            "connection time"
                         )
-                    elif available - transit < 15:
+                    elif available_minutes - transit < 15:
                         warnings.append(
-                            f"Transfer {index + 1}: less than "
+                            f"Transfer {transfer_number}: less than "
                             "15 minutes remain after station transit"
                         )
-
-        transfer = (
-            transfers[index]
-            if index < len(transfers)
-            else {}
-        )
+                elif transit is not None:
+                    warnings.append(
+                        f"Transfer {transfer_number}: invalid "
+                        "station transit duration"
+                    )
+                else:
+                    warnings.append(
+                        f"Transfer {transfer_number}: station transit "
+                        "duration is unavailable"
+                    )
 
         probability = transfer.get("connectionProbability")
 
-        if isinstance(probability, (int, float)):
-            if not 0 <= probability <= 100:
-                warnings.append(
-                    f"Transfer {index + 1}: invalid connection "
-                    "probability"
-                )
-            elif probability < 50:
-                warnings.append(
-                    f"Transfer {index + 1}: low connection "
-                    f"probability ({probability}%)"
-                )
+        if probability is None:
+            warnings.append(
+                f"Transfer {transfer_number}: connection probability "
+                "unavailable"
+            )
+        elif (
+            not isinstance(probability, (int, float))
+            or isinstance(probability, bool)
+            or not 0 <= probability <= 100
+        ):
+            warnings.append(
+                f"Transfer {transfer_number}: invalid connection "
+                "probability"
+            )
+        elif probability < 50:
+            warnings.append(
+                f"Transfer {transfer_number}: low connection "
+                f"probability ({probability}%)"
+            )
 
     return {
         "valid": not errors,
-        "errors": errors,
-        "warnings": warnings,
+        "errors": list(dict.fromkeys(errors)),
+        "warnings": list(dict.fromkeys(warnings)),
     }
