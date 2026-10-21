@@ -52,34 +52,64 @@ def trains_between(from_code, to_code, journey_date=None):
             f"Could not retrieve train data: {error}"
         ) from error
 
+def plan_route(stops, max_transfers=1):
+    """Request a multi-stop journey plan from RailRadar."""
 
-if __name__ == "__main__":
-    source = input("From station code: ").strip().upper()
-    destination = input("To station code: ").strip().upper()
-    date = input("Journey date (YYYY-MM-DD, optional): ").strip()
+    API_KEY = os.getenv("RAIL_RADAR_API")
 
-    try:
-        data = trains_between(
-            source,
-            destination,
-            date or None,
-        )
+    if not API_KEY:
+        raise RuntimeError("RAIL_RADAR_API is missing from .env")
+    if len(stops) < 2:
+        raise ValueError("At least two stations are required.")
 
-        print(f"\n{data['from']['name']} -> {data['to']['name']}")
-        print(f"Trains found: {data['count']}\n")
+    payload = {
+        "stops": stops,
+        "maxTransfers": max_transfers,
+    }
 
-        for item in data.get("trains", []):
-            train = item["train"]
-            departure = item.get("from", {}).get("departure", "Unknown")
-            arrival = item.get("to", {}).get("arrival", "Unknown")
-            duration = item.get("duration", "Unknown")
+    response = requests.post(
+        "https://api.railradar.in/v1/journeys/plan",
+        headers={
+            "Authorization": f"Bearer {API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=30,
 
-            print(
-                f"{train['number']} - {train['name']}\n"
-                f"  Departure: {departure}\n"
-                f"  Arrival:   {arrival}\n"
-                f"  Duration:  {duration} minutes\n"
-            )
+    )
+    response.raise_for_status()
+    return response.json()
 
-    except (RuntimeError, KeyError, ValueError) as error:
-        print(f"Error: {error}")
+
+
+#if __name__ == "__main__":
+#    source = input("From station code: ").strip().upper()
+#    destination = input("To station code: ").strip().upper()
+#    date = input("Journey date (YYYY-MM-DD, optional): ").strip()
+#
+#    try:
+#        data = trains_between(
+#            source,
+#            destination,
+#            date or None,
+#        )
+#
+#        print(f"\n{data['from']['name']} -> {data['to']['name']}")
+#        print(f"Trains found: {data['count']}\n")
+#
+#        for item in data.get("trains", []):
+#            train = item["train"]
+#            departure = item.get("from", {}).get("departure", "Unknown")
+#            arrival = item.get("to", {}).get("arrival", "Unknown")
+#            duration = item.get("duration", "Unknown")
+#
+#            print(
+#                f"{train['number']} - {train['name']}\n"
+#                f"  Departure: {departure}\n"
+#                f"  Arrival:   {arrival}\n"
+#                f"  Duration:  {duration} minutes\n"
+#            )
+#
+#    except (RuntimeError, KeyError, ValueError) as error:
+#        print(f"Error: {error}")
+#
