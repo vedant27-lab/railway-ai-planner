@@ -1,14 +1,39 @@
 
 from planner.itinerary_validator import validate_itinerary
+from datetime import datetime
 
 
 VALID_PREFERENCES = {"fastest", "fewest_transfers", "safest"}
 
 
-def _duration(itinerary):
-    """Return total journey duration in minutes."""
-    total = itinerary.get("totalDurationMinutes")
 
+def _duration(itinerary):
+    from datetime import datetime
+
+    legs = itinerary.get("legs", [])
+
+    if legs:
+        try:
+            first_origin = legs[0].get("from") or {}
+            last_destination = legs[-1].get("to") or {}
+
+            start = datetime.strptime(
+                f"{first_origin['date']} {first_origin['departure']}",
+                "%Y-%m-%d %H:%M",
+            )
+            end = datetime.strptime(
+                f"{last_destination['date']} {last_destination['arrival']}",
+                "%Y-%m-%d %H:%M",
+            )
+
+            elapsed = (end - start).total_seconds() / 60
+
+            if elapsed >= 0:
+                return elapsed
+        except (KeyError, TypeError, ValueError):
+            pass
+
+    total = itinerary.get("totalDurationMinutes")
     if (
         isinstance(total, (int, float))
         and not isinstance(total, bool)
@@ -16,9 +41,7 @@ def _duration(itinerary):
     ):
         return total
 
-    legs = itinerary.get("legs", [])
     durations = [leg.get("durationMinutes") for leg in legs]
-
     if legs and all(
         isinstance(value, (int, float))
         and not isinstance(value, bool)
