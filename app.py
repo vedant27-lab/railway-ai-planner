@@ -1,5 +1,5 @@
 from typing import Literal
-
+import traceback
 import requests
 from fastapi import FastAPI, HTTPException
 from models.model import JourneyRequest
@@ -54,7 +54,7 @@ def search_journeys(request: JourneyRequest):
 
     origin = request.origin.strip().upper()
 
-    destination = request.destination.strip().upper
+    destination = request.destination.strip().upper()
 
     if origin == destination:
         raise HTTPException(
@@ -120,7 +120,7 @@ def search_journeys(request: JourneyRequest):
         ) from error
 
     except Exception as error:
-        print(f"Unexpected journey-planner error: {error}")
+        traceback.print_exc()
         raise HTTPException(
             status_code=500,
             detail="An unexcepted error occurred while planning the journey.",

@@ -2,6 +2,7 @@
 import os
 import requests
 from dotenv import load_dotenv
+import json
 
 from station_lookup import resolve_station, resolve_stops
 
@@ -66,10 +67,17 @@ def plan_route(stops, max_transfers=1):
     if len(stops) < 2:
         raise ValueError("At least two stations are required.")
 
+    resolved_stops = resolve_stops(stops)
+    print("DEBUG resolved_stops:", repr(resolved_stops))
+    print("DEBUG item types:", [type(item).__name__ for item in resolved_stops])
+
     payload = {
-        "stops": resolve_stops(stops),
+        "stops": resolved_stops,
         "maxTransfers": max_transfers,
     }
+
+    print("DEBUG payload:", json.dumps(payload))
+
 
     response = requests.post(
         "https://api.railradar.in/v1/journeys/plan",

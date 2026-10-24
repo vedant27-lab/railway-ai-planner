@@ -10,7 +10,6 @@ def duration_minutes(value):
         return value
 
     if isinstance(value, str):
-        # Handle formats such as "18h 30m" or "18:30".
         try:
             if "h" in value.lower():
                 hours = 0
@@ -45,7 +44,6 @@ def plan_journey(source, destination, date=None):
         print("No trains were returned for this journey.")
         return
 
-    # Shortest reported duration first.
     ranked = sorted(
         trains,
         key=lambda item: duration_minutes(item.get("duration")),
@@ -73,9 +71,9 @@ def plan_journey(source, destination, date=None):
         )
 
 
-if __name__ == "__main__":
-    source = input("From station code: ").strip().upper()
-    destination = input("To station code: ").strip().upper()
-    date = input("Journey date (YYYY-MM-DD): ").strip()
-
-    plan_journey(source, destination, date or None)
+#if __name__ == "__main__":
+#    source = input("From station code: ").strip().upper()
+#    destination = input("To station code: ").strip().upper()
+#    date = input("Journey date (YYYY-MM-DD): ").strip()
+#
+#    plan_journey(source, destination, date or None)
