@@ -1,11 +1,12 @@
 from typing import Literal
 import traceback
 import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from models.model import JourneyRequest
 from api.railway_api import plan_route
 from planner.itinerary_validator import validate_itinerary
 from planner.route_scorer import rank_itineraries
+from station_lookup import resolve_station, search_stations
 
 app = FastAPI(
     title="Railway Journey Planner",
@@ -48,13 +49,22 @@ def home():
 def health():
     return {"status":"ok"}
 
+
+@app.get("/stations")
+def station_search(
+    q: str = Query(default="", max_length=60),
+    limit: int = Query(default=8, ge=1, le=20),
+):
+    """Search the local station directory for autocomplete suggestions."""
+
+    return {"results": search_stations(q, limit=limit)}
+
 @app.post("/journeys")
 def search_journeys(request: JourneyRequest):
     """Find and rank journeys between two stations."""
 
-    origin = request.origin.strip().upper()
-
-    destination = request.destination.strip().upper()
+    origin = resolve_station(request.origin.strip())
+    destination = resolve_station(request.destination.strip())
 
     if origin == destination:
         raise HTTPException(
@@ -66,6 +76,7 @@ def search_journeys(request: JourneyRequest):
         response = plan_route(
             [origin, destination],
             max_transfers=request.max_transfers,
+            journey_date=request.journey_date,
         )
 
         itineraries = find_itineraries(response)
@@ -74,10 +85,16 @@ def search_journeys(request: JourneyRequest):
             return {
                 "origin": origin,
                 "destination": destination,
+                "journey_date": (
+                    request.journey_date.isoformat()
+                    if request.journey_date else None
+                ),
                 "preference": request.preference,
                 "itineraries_found": 0,
                 "valid_itineraries": 0,
+                "results_total_available": 0,
                 "results": [],
+                "all_results": [],
                 "message": "No itineraries found in the API response.",
             }
 
@@ -97,14 +114,26 @@ def search_journeys(request: JourneyRequest):
             limit=request.limit,
         )
 
+        all_ranked = rank_itineraries(
+            valid_itineraries,
+            preference="fastest",
+            limit=max(1, len(valid_itineraries)),
+        )
+
         return {
             "origin": origin,
             "destination": destination,
+            "journey_date": (
+                request.journey_date.isoformat()
+                if request.journey_date else None
+            ),
             "preference": request.preference,
             "itineraries_found": len(itineraries),
             "valid_itineraries": len(valid_itineraries),
             "results_returned": len(ranked),
+            "results_total_available": len(all_ranked),
             "results":ranked,
+            "all_results": all_ranked,
         }
 
     except RuntimeError as error:

@@ -51,9 +51,10 @@ The result is intended as a helpful planning aid—not a ticketing, booking, or 
 
 ## Features
 
-- Fetches trains between two station codes using RailRadar.
+- Fetches railway journeys between station names or station codes using RailRadar.
+- Provides a local station directory and `/stations` autocomplete endpoint.
 - Supports an optional journey date.
-- Accepts a user preference such as `fastest`.
+- Accepts `fastest`, `fewest_transfers`, or `safest` ranking preferences.
 - Produces recommendations with train number, name, departure, arrival, duration, and reasoning.
 - Reviews recommendations against the original API response.
 - Allows one planner revision when the reviewer reports `NOT READY`.
@@ -63,6 +64,7 @@ The result is intended as a helpful planning aid—not a ticketing, booking, or 
 ## Requirements
 
 - Python 3.10 or newer recommended
+- Node.js 20 or newer and npm for the web frontend
 - A RailRadar API key
 - A Groq API key
 - A Groq model name available to your account
@@ -104,7 +106,36 @@ RAIL_RADAR_API=your_railradar_api_key
 
 `RAIL_RADAR_API` is the variable name currently read by the application. Make sure the model value is a model available in your Groq account.
 
-### 4. Run the planner
+### 4. Run the backend API
+
+From the project root in Windows PowerShell:
+
+```powershell
+.\venv\Scripts\Activate.ps1
+uvicorn app:app --reload --host 127.0.0.1 --port 8000
+```
+
+The backend is available at `http://127.0.0.1:8000`.
+
+- Swagger API documentation: `http://127.0.0.1:8000/docs`
+- Health check: `http://127.0.0.1:8000/health`
+- Station autocomplete: `http://127.0.0.1:8000/stations?q=delhi`
+
+### 5. Run the Railwise AI frontend
+
+In a second PowerShell window:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://127.0.0.1:5173`. Vite proxies `/health`, `/stations`, and `/journeys` to the local FastAPI server, so no public backend URL or browser API key is required.
+
+From the project root, the equivalent shortcuts are `npm run install:frontend`, `npm run dev`, `npm run build`, and `npm run preview`.
+
+### 6. Run the original command-line planner
 
 ```bash
 python main.py
@@ -136,7 +167,34 @@ recommendation = plan(
 )
 ```
 
-The function prints the plan and review as it works, then returns the latest recommendation text. The current implementation expects station codes and a date string in `YYYY-MM-DD` format.
+The function prints the plan and review as it works, then returns the latest recommendation text. Station codes and station names from `station_codes.json` are accepted at the API boundary.
+
+## Journey API contract
+
+`POST /journeys` accepts:
+
+```json
+{
+  "origin": "New Delhi",
+  "destination": "BCT",
+  "journey_date": "2026-12-03",
+  "max_transfers": 2,
+  "preference": "fastest",
+  "limit": 5
+}
+```
+
+`journey_date` is passed to the RailRadar journey planner as the date on the origin stop. The API keeps the existing snake_case request fields and adds this optional field for backward compatibility. The response keeps the existing `results` field and also exposes `all_results` for the frontend's client-side category comparisons.
+
+The frontend categories are based on returned data:
+
+- **Fastest** sorts by total duration, then transfers and heuristic risk.
+- **Fewest transfers** sorts by transfer count, then heuristic risk and duration.
+- **Most efficient** uses a transparent client-side comparison of duration, transfer count, and reported waiting time.
+- **Safest / reliability** uses the backend's heuristic risk/reliability signals. It is not a real-world safety guarantee.
+- **All journeys** shows all valid journeys returned by the backend; it does not claim to enumerate theoretical routes beyond the upstream response.
+
+The backend never exposes `RAIL_RADAR_API` or `GROQ_API_KEY` to the frontend. Station suggestions are read from the local `station_codes.json` directory.
 
 ## Project layout
 
@@ -149,7 +207,8 @@ The function prints the plan and review as it works, then returns the latest rec
 │   └── agents.py                 # Groq planner and reviewer agents
 ├── planner/
 │   └── journey_planner.py        # Direct duration ranking utility
-├── tests/                        # Reserved for automated tests
+├── tests/                        # Backend and ranking tests
+├── frontend/                     # React + TypeScript + Vite web application
 ├── requirements.txt              # Runtime dependencies
 └── .env                         # Local secrets; ignored by Git
 ```
@@ -194,9 +253,17 @@ Verify `GROQ_API_KEY` and set `GROQ_MODEL` to a model name supported by your Gro
 
 Confirm that both station codes are valid, the date is correctly formatted, and the RailRadar response contains records for the requested route and date.
 
+### Frontend cannot reach the backend
+
+Start the backend first with `uvicorn app:app --reload --host 127.0.0.1 --port 8000`, then restart the Vite development server. The frontend expects the backend at port `8000` through its development proxy.
+
+### Date or reliability questions
+
+The selected date is sent to the journey-planning request. Reliability and risk values come only from the upstream response and the existing structural/heuristic checks. This project does not provide ticket booking, fares, seat availability, cancellation guarantees, or a real-world safety score.
+
 ## Development status
 
-This is an early command-line prototype. The `tests/` directory is currently reserved for future automated coverage. Natural next steps include structured return values, input validation, retry and rate-limit handling, richer preference ranking, logging, and unit/integration tests around the API and agent loop.
+The project now includes a local React frontend alongside the original Python planner. The upstream RailRadar response remains the source of journey data; the frontend only compares and presents the journeys returned by the backend.
 
 ## License
 

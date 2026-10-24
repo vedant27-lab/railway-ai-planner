@@ -1,3 +1,6 @@
+fastapi>=0.110
 groq
+pydantic>=2.0
 python-dotenv
 requests
+uvicorn>=0.29

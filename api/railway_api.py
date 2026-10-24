@@ -2,7 +2,6 @@
 import os
 import requests
 from dotenv import load_dotenv
-import json
 
 from station_lookup import resolve_station, resolve_stops
 
@@ -57,7 +56,7 @@ def trains_between(from_code, to_code, journey_date=None):
             f"Could not retrieve train data: {error}"
         ) from error
 
-def plan_route(stops, max_transfers=1):
+def plan_route(stops, max_transfers=1, journey_date=None):
     """Request a multi-stop journey plan from RailRadar."""
 
     API_KEY = os.getenv("RAIL_RADAR_API")
@@ -68,16 +67,25 @@ def plan_route(stops, max_transfers=1):
         raise ValueError("At least two stations are required.")
 
     resolved_stops = resolve_stops(stops)
-    print("DEBUG resolved_stops:", repr(resolved_stops))
-    print("DEBUG item types:", [type(item).__name__ for item in resolved_stops])
+
+    if journey_date:
+        date_value = (
+            journey_date.isoformat()
+            if hasattr(journey_date, "isoformat")
+            else str(journey_date)
+        )
+        first_stop = resolved_stops[0]
+        if isinstance(first_stop, dict):
+            first_stop = dict(first_stop)
+            first_stop["date"] = date_value
+        else:
+            first_stop = {"station": first_stop, "date": date_value}
+        resolved_stops[0] = first_stop
 
     payload = {
         "stops": resolved_stops,
         "maxTransfers": max_transfers,
     }
-
-    print("DEBUG payload:", json.dumps(payload))
-
 
     response = requests.post(
         "https://api.railradar.in/v1/journeys/plan",
